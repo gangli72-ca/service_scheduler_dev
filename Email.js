@@ -205,10 +205,16 @@ function sendUpcomingSundayAssignmentsEmail() {
     var row = scheduleValues[targetRowIndex];
 
     // Build a map: volunteerName -> [roles...]
+    // Skip columns whose header contains "Helper" (e.g., "xxx Helper")
     var assignmentsByPerson = {};
     for (var c = 1; c < header.length; c++) { // column 0 is Date, so start from 1
         var roleName = header[c];
         var volName = row[c];
+
+        // Skip "Helper" roles - do not send notifications for these volunteers
+        if (roleName && String(roleName).indexOf('Helper') !== -1) {
+            continue;
+        }
 
         if (volName && typeof volName === 'string') {
             if (!assignmentsByPerson[volName]) {
