@@ -256,3 +256,90 @@ function getCouplesMap() {
 
     return map;
 }
+
+/**
+ * Finds parent helper names on the Schedule sheet that cannot be found in either
+ * the Roles sheet or the Parent Helper sheet.
+ *
+ * - Roles sheet: searches Column A for names.
+ * - Parent Helper sheet: combines Column C (Chinese name) and Column A (English name)
+ *   as "<Chinese_name> <English_Name>" or just "<English_name>" if no Chinese name.
+ * - Schedule sheet: searches columns whose header contains "Helper".
+ *
+ * @return {string[]} Array of names that cannot be found in either sheet.
+ */
+function findUnmatchedParentHelpers() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // 1. Build a set of known names from the Roles sheet (Column A)
+    var knownNames = {};
+    var rolesSheet = ss.getSheetByName("Roles");
+    if (rolesSheet && rolesSheet.getLastRow() >= 2) {
+        var rolesData = rolesSheet.getRange(2, 1, rolesSheet.getLastRow() - 1, 1).getValues();
+        rolesData.forEach(function (row) {
+            var name = (row[0] || "").toString().trim();
+            if (name) {
+                knownNames[name.toLowerCase()] = true;
+            }
+        });
+    }
+
+    // 2. Add names from the Parent Helper sheet (combine Col C + Col A)
+    var parentHelperSheet = ss.getSheetByName("Parent Helper");
+    if (parentHelperSheet && parentHelperSheet.getLastRow() >= 2) {
+        var phData = parentHelperSheet.getRange(2, 1, parentHelperSheet.getLastRow() - 1, 3).getValues();
+        phData.forEach(function (row) {
+            var englishName = (row[0] || "").toString().trim();  // Col A
+            var chineseName = (row[2] || "").toString().trim();  // Col C
+
+            // Construct full name as it appears on Schedule: "<Chinese> <English>" or just "<English>"
+            var fullName = chineseName ? (chineseName + " " + englishName) : englishName;
+            if (fullName) {
+                knownNames[fullName.toLowerCase()] = true;
+            }
+        });
+    }
+
+    // 3. Collect helper names from the Schedule sheet (columns with "Helper" in header)
+    var scheduleSheet = ss.getSheetByName("Schedule");
+    if (!scheduleSheet || scheduleSheet.getLastRow() < 2) {
+        return [];
+    }
+
+    var scheduleData = scheduleSheet.getDataRange().getValues();
+    var headers = scheduleData[0];
+
+    // Find column indices where header contains "Helper"
+    var helperColIndices = [];
+    for (var col = 0; col < headers.length; col++) {
+        var header = (headers[col] || "").toString();
+        if (header.indexOf("Helper") !== -1) {
+            helperColIndices.push(col);
+        }
+    }
+
+    // Collect all unique helper names from those columns
+    var scheduleNames = {};
+    for (var row = 1; row < scheduleData.length; row++) {
+        helperColIndices.forEach(function (colIdx) {
+            var name = (scheduleData[row][colIdx] || "").toString().trim();
+            if (name) {
+                scheduleNames[name] = true;
+            }
+        });
+    }
+
+    // 4. Find names that are NOT in knownNames
+    var unmatched = [];
+    Object.keys(scheduleNames).forEach(function (name) {
+        if (!knownNames[name.toLowerCase()]) {
+            unmatched.push(name);
+        }
+    });
+
+    // Sort alphabetically for easier reading
+    unmatched.sort();
+
+    Logger.log("Unmatched parent helpers: " + JSON.stringify(unmatched));
+    return unmatched;
+}
