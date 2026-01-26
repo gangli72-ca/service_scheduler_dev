@@ -649,3 +649,209 @@ function highlightOnePerson() {
   dataRange.setBackgrounds(backgrounds);
   SpreadsheetApp.flush();
 }
+
+/**
+ * Installable onEdit trigger for the Roles sheet.
+ * When a role checkbox is changed:
+ *   - If set to TRUE: add the volunteer to the Schedule dropdowns for that role
+ *     (excluding dates where the volunteer has a blackout)
+ *   - If set to FALSE: remove the volunteer from Schedule dropdowns for that role
+ *     (only for future dates). If volunteer is already assigned, set cell to "NA".
+ *
+ * Logs all changes to the Roles sheet and any Schedule cell changes to "NA".
+ *
+ * Must be installed as an installable trigger to get e.oldValue.
+ */
+function handleRolesEdit(e) {
+  if (!e) return;
+
+  var range = e.range;
+  var sheet = range.getSheet();
+
+  // Only proceed on the "Roles" sheet
+  if (sheet.getName() !== "Roles") return;
+
+  var row = range.getRow();
+  var col = range.getColumn();
+
+  // Skip header row (row 1) and name column (col 1)
+  // The email column is the last column in the header row, so skip that too
+  var headerValues = sheet.getRange(1, 1, 1, sheet.getMaxColumns()).getValues()[0];
+
+  // Find the actual last column with data in header row
+  var lastDataCol = 1;
+  for (var c = 0; c < headerValues.length; c++) {
+    if (headerValues[c] !== "") {
+      lastDataCol = c + 1; // 1-indexed
+    }
+  }
+
+  // Skip if: header row, name column (col 1), or email column (last data col)
+  if (row < 2 || col < 2 || col >= lastDataCol) return;
+
+  var newValue = e.value;
+
+  // For checkboxes, e.value can be boolean true/false or string "TRUE"/"FALSE"
+  // Read the actual cell value to be sure
+  var cellValue = range.getValue();
+  var isChecked = (cellValue === true);
+
+  // We need to determine if this was a change. Since e.oldValue may not always be available,
+  // we'll process the action based on the current state:
+  // - If checked (true): add to dropdowns
+  // - If unchecked (false): remove from dropdowns
+  // The function will be idempotent, so running it multiple times is safe.
+
+  // Get volunteer name from column A
+  var volunteerName = sheet.getRange(row, 1).getDisplayValue().trim();
+  if (!volunteerName) return;
+
+  // Get role name from header row
+  var roleName = sheet.getRange(1, col).getDisplayValue().trim();
+  if (!roleName) return;
+
+  // Log the Roles sheet change
+  var rolesLogMsg = "**" + roleName + "** role for " + volunteerName + " changed to " + (isChecked ? "enabled" : "disabled");
+  logAction(rolesLogMsg);
+
+  // Get necessary sheets
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var scheduleSheet = ss.getSheetByName("Schedule");
+  var blackoutSheet = ss.getSheetByName("Blackout Dates");
+
+  if (!scheduleSheet) return;
+
+  // Find the column index on Schedule sheet that matches this role
+  var scheduleHeaders = scheduleSheet.getRange(1, 1, 1, scheduleSheet.getLastColumn()).getValues()[0];
+  var roleColIndex = -1;
+  for (var i = 0; i < scheduleHeaders.length; i++) {
+    if (scheduleHeaders[i] === roleName) {
+      roleColIndex = i + 1; // 1-indexed
+      break;
+    }
+  }
+
+  if (roleColIndex < 2) return; // Role not found or it's the Date column
+
+  // Load blackout data to check volunteer's blackout dates
+  var blackoutDateMap = {};       // formatted date string -> column index
+  var volunteerBlackoutRow = -1;  // row index in blackout data for this volunteer
+  var blackoutData = [];
+  var dateFormat = "MM/dd/yyyy";
+  var tz = ss.getSpreadsheetTimeZone();
+
+  if (blackoutSheet) {
+    blackoutData = blackoutSheet.getDataRange().getValues();
+    var blackoutHeader = blackoutData[0];
+
+    // Build map of date -> column index
+    for (var j = 1; j < blackoutHeader.length; j++) {
+      var d = blackoutHeader[j];
+      if (d instanceof Date) {
+        var formatted = Utilities.formatDate(d, tz, dateFormat);
+        blackoutDateMap[formatted] = j;
+      } else {
+        blackoutDateMap[d] = j;
+      }
+    }
+
+    // Find volunteer's row in blackout sheet
+    for (var i = 1; i < blackoutData.length; i++) {
+      if (blackoutData[i][0] === volunteerName) {
+        volunteerBlackoutRow = i;
+        break;
+      }
+    }
+  }
+
+  // Get today's date for comparison (only modify future dates for FALSE case)
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Iterate through each date row on Schedule sheet and update dropdowns
+  var scheduleData = scheduleSheet.getDataRange().getValues();
+
+  for (var r = 1; r < scheduleData.length; r++) { // Skip header row
+    var dateCell = scheduleData[r][0];
+    if (!(dateCell instanceof Date)) continue;
+
+    var scheduleDateClean = new Date(dateCell.getTime());
+    scheduleDateClean.setHours(0, 0, 0, 0);
+    var formattedDate = Utilities.formatDate(dateCell, tz, dateFormat);
+
+    // Get current validation rule for this cell
+    var cell = scheduleSheet.getRange(r + 1, roleColIndex); // +1 because r is 0-indexed from data
+    var validation = cell.getDataValidation();
+    var currentValue = scheduleData[r][roleColIndex - 1]; // roleColIndex is 1-indexed
+
+    if (isChecked) {
+      // ========== CHECKBOX SET TO TRUE ==========
+      // Check if volunteer has blackout on this date
+      var isBlackout = false;
+      if (volunteerBlackoutRow >= 0 && blackoutDateMap.hasOwnProperty(formattedDate)) {
+        var blackoutColIdx = blackoutDateMap[formattedDate];
+        if (blackoutData[volunteerBlackoutRow][blackoutColIdx] === true) {
+          isBlackout = true;
+        }
+      }
+
+      // Skip this date if volunteer has blackout
+      if (isBlackout) continue;
+
+      if (validation && validation.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) {
+        var criteriaValues = validation.getCriteriaValues();
+        var currentList = criteriaValues[0]; // Array of allowed values
+
+        // Add volunteer if not already in list
+        if (currentList.indexOf(volunteerName) === -1) {
+          currentList.push(volunteerName);
+          currentList.sort(); // Keep list sorted
+
+          var newRule = SpreadsheetApp.newDataValidation()
+            .requireValueInList(currentList, true)
+            .build();
+          cell.setDataValidation(newRule);
+        }
+      } else {
+        // No existing validation - create one with just this volunteer
+        var newRule = SpreadsheetApp.newDataValidation()
+          .requireValueInList([volunteerName], true)
+          .build();
+        cell.setDataValidation(newRule);
+      }
+
+    } else {
+      // ========== CHECKBOX SET TO FALSE ==========
+      // Only modify future dates
+      if (scheduleDateClean <= today) continue;
+
+      if (validation && validation.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) {
+        var criteriaValues = validation.getCriteriaValues();
+        var currentList = criteriaValues[0]; // Array of allowed values
+
+        // Remove volunteer from list if present
+        var idx = currentList.indexOf(volunteerName);
+        if (idx !== -1) {
+          currentList.splice(idx, 1);
+
+          if (currentList.length > 0) {
+            var newRule = SpreadsheetApp.newDataValidation()
+              .requireValueInList(currentList, true)
+              .build();
+            cell.setDataValidation(newRule);
+          } else {
+            // No volunteers left - clear validation
+            cell.clearDataValidations();
+          }
+        }
+      }
+
+      // If volunteer was already assigned to this cell, set to "NA" and log
+      if (currentValue === volunteerName) {
+        cell.setValue("NA");
+        var scheduleLogMsg = "**" + roleName + "** for " + formattedDate + " changed from (" + volunteerName + ") to (NA) due to role being disabled";
+        logAction(scheduleLogMsg);
+      }
+    }
+  }
+}
