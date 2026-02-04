@@ -200,3 +200,130 @@ function handleBlackoutEdit(e) {
 
     // If we reach here, the user email matches the row's email → edit allowed
 }
+
+/**
+ * Marks blackout dates for EM (English Ministry) members on special Sunday dates.
+ * 
+ * Reads from the Config sheet:
+ *   - Column D (rows 2+): EM member names
+ *   - Column E (rows 2+): Special Sunday dates
+ * 
+ * For each EM member and each special Sunday date, finds the corresponding
+ * cell on the Blackout Dates sheet and checks the checkbox (sets value to true).
+ */
+function markEMBlackoutDates() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var configSheet = ss.getSheetByName("Config");
+    var blackoutSheet = ss.getSheetByName("Blackout Dates");
+
+    if (!configSheet || !blackoutSheet) {
+        SpreadsheetApp.getUi().alert("Config or Blackout Dates sheet not found.");
+        return;
+    }
+
+    // Read EM members from Config Column D (starting row 2)
+    var configLastRow = configSheet.getLastRow();
+    if (configLastRow < 2) {
+        SpreadsheetApp.getUi().alert("No data found in Config sheet.");
+        return;
+    }
+
+    // Get EM members (Column D)
+    var emMembersRange = configSheet.getRange(2, 4, configLastRow - 1, 1); // D2:D
+    var emMembersData = emMembersRange.getValues();
+    var emMembers = emMembersData
+        .map(function (row) { return (row[0] || "").toString().trim(); })
+        .filter(function (name) { return name.length > 0; });
+
+    // Get special Sunday dates (Column E)
+    var datesRange = configSheet.getRange(2, 5, configLastRow - 1, 1); // E2:E
+    var datesData = datesRange.getValues();
+    var specialDates = datesData
+        .filter(function (row) { return row[0] instanceof Date; })
+        .map(function (row) { return row[0]; });
+
+    if (emMembers.length === 0) {
+        SpreadsheetApp.getUi().alert("No EM members found in Config Column D.");
+        return;
+    }
+
+    if (specialDates.length === 0) {
+        SpreadsheetApp.getUi().alert("No special Sunday dates found in Config Column E.");
+        return;
+    }
+
+    // Build a map of volunteer names to their row indices on Blackout Dates sheet
+    var blackoutLastRow = blackoutSheet.getLastRow();
+    var blackoutLastCol = blackoutSheet.getLastColumn();
+
+    if (blackoutLastRow < 2 || blackoutLastCol < 2) {
+        SpreadsheetApp.getUi().alert("Blackout Dates sheet appears to be empty or not set up.");
+        return;
+    }
+
+    // Get all volunteer names from Column A (row 2 onwards)
+    var namesData = blackoutSheet.getRange(2, 1, blackoutLastRow - 1, 1).getValues();
+    var nameToRow = {};
+    for (var i = 0; i < namesData.length; i++) {
+        var name = (namesData[i][0] || "").toString().trim();
+        if (name) {
+            nameToRow[name] = i + 2; // row index (1-indexed, starting from row 2)
+        }
+    }
+
+    // Get all date headers from row 1 (column 2 onwards)
+    // Use getDisplayValues() to get formatted date strings as shown in the sheet
+    var headersData = blackoutSheet.getRange(1, 2, 1, blackoutLastCol - 1).getDisplayValues()[0];
+    var dateFormat = "MM/dd/yyyy";
+    var tz = ss.getSpreadsheetTimeZone();
+    var dateToCol = {};
+    for (var j = 0; j < headersData.length; j++) {
+        var headerText = (headersData[j] || "").toString().trim();
+        if (headerText) {
+            dateToCol[headerText] = j + 2; // column index (1-indexed, starting from column 2)
+        }
+    }
+
+    // Mark blackout dates for each EM member and special date
+    var markedCount = 0;
+    var notFoundMembers = [];
+    var notFoundDates = [];
+
+    emMembers.forEach(function (memberName) {
+        var row = nameToRow[memberName];
+        if (!row) {
+            if (notFoundMembers.indexOf(memberName) === -1) {
+                notFoundMembers.push(memberName);
+            }
+            return;
+        }
+
+        specialDates.forEach(function (date) {
+            var formattedDate = Utilities.formatDate(date, tz, dateFormat);
+            var col = dateToCol[formattedDate];
+            if (!col) {
+                if (notFoundDates.indexOf(formattedDate) === -1) {
+                    notFoundDates.push(formattedDate);
+                }
+                return;
+            }
+
+            // Check the checkbox (set to true)
+            blackoutSheet.getRange(row, col).setValue(true);
+            markedCount++;
+        });
+    });
+
+    // Build result message
+    var message = "Marked " + markedCount + " blackout date(s) for EM members.";
+
+    if (notFoundMembers.length > 0) {
+        message += "\n\nEM members not found on Blackout Dates sheet:\n- " + notFoundMembers.join("\n- ");
+    }
+
+    if (notFoundDates.length > 0) {
+        message += "\n\nDates not found on Blackout Dates sheet:\n- " + notFoundDates.join("\n- ");
+    }
+
+    SpreadsheetApp.getUi().alert(message);
+}
