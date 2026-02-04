@@ -37,7 +37,20 @@ function sendBlackoutNotificationEmails() {
         return;
     }
 
-    var lastCol = rolesSheet.getLastColumn();
+    // Find the email column by header name "SVCA Email"
+    var headerRow = rolesSheet.getDataRange().getValues()[0];
+    var emailCol = -1;
+    for (var c = 0; c < headerRow.length; c++) {
+        if (String(headerRow[c]).trim() === 'SVCA Email') {
+            emailCol = c + 1;
+            break;
+        }
+    }
+    if(emailCol == -1) {
+        SpreadsheetApp.getUi().alert('Cannot find the SVCA Email column.');
+        return;
+    }
+
     var ranges = rangeList.getRanges();
     var recipients = [];  // {name, email, row}
 
@@ -50,9 +63,13 @@ function sendBlackoutNotificationEmails() {
             if (r < 2) continue;
 
             var name = rolesSheet.getRange(r, 1).getDisplayValue().trim();        // Col A
-            var email = rolesSheet.getRange(r, lastCol).getDisplayValue().trim();  // Last col = Email
+            var email = rolesSheet.getRange(r, emailCol).getDisplayValue().trim();  
 
-            if (!name || !email) continue;
+            if (!name || !email) {
+              logAction('Cannot find name or email on Roles sheet for row ' + r);
+              continue;
+            }
+            
 
             recipients.push({
                 name: name,
@@ -86,11 +103,9 @@ function sendBlackoutNotificationEmails() {
 
             'Praise the Lord! When you receive this email, it means that we are serving together in nurturing the next generation for the Lord and are committed to the SVCA Children’s Sunday School ministry.\n\n' +
 
-            'To make the overall scheduling process smoother, the Children’s Ministry plans to prepare the Sunday serving rotations quarterly in advance (Dec–Feb, Mar–May, Jun–Aug, Sep–Nov). Each area coordinator will then make adjustments according to actual needs. To support this process, we have created a Blackout Dates form. Please mark the dates when you cannot serve, and the system will automatically generate a rotation schedule based on the rules, minimizing the chance of human errors in manual scheduling.\n\n' +
+            'Please mark the dates when you cannot serve, and the system will automatically generate a rotation schedule based on the rules, minimizing the chance of human errors in manual scheduling. Just go to https://docs.google.com/spreadsheets/d/1UmGhZH8p5cqZSktto-i2qV5PuGH607UF8UTv_VGe9C8/edit#gid=1893596443 (you must log in with your SVCA email) and check the dates you **cannot serve** on the row corresponding to your name. Please be careful not to make changes on other co-workers’ rows.\n\n' +
 
-            'Please go to https://docs.google.com/spreadsheets/d/1UmGhZH8p5cqZSktto-i2qV5PuGH607UF8UTv_VGe9C8/edit#gid=1893596443 (you must log in with your SVCA email) and check the dates you **cannot serve** on the row corresponding to your name. Please be careful not to make changes on other co-workers’ rows.\n\n' +
-
-            'This is the first time we are opening this scheduling process. We kindly ask everyone to complete it before November 23. We also warmly welcome any suggestions you may have—please write them in the Improvement Ideas sheet. We will do our best to continually improve this system.\n\n' +
+            'We kindly ask everyone to complete it before Feb 8 so that we will have enough time to arrange the service schedule of next quarter.\n\n' +
 
             'May the Lord help us improve the quality of our service together and be good stewards of the time He gives us.\n\n' +
 
@@ -101,13 +116,13 @@ function sendBlackoutNotificationEmails() {
         var htmlBody =
             '親愛的同工' + name + ':' + '<br><br>' +
 
-            '感謝主，當您收到這張排班表，表示我們一起為主培育下一代，委身於SVCA兒童主日學事工。<br><br>' +
+            '感謝主，當您收到這封Email，表示我們一起為主培育下一代，委身於SVCA兒童主日學事工。<br><br>' +
 
-            '為了整體排班上更順暢，兒童部擬將主日服事輪值表以季度方式（12-2, 3-5, 6-8, 9-11月)預先總體安排，屆時由各項負責同工按照實際情況調動，特別設計了 Blackout Dates 表格。同工自已把<b>“無法上崗”</b>的日期圈選出來，其他時間開放讓系統自動按照規則輪值，盡量避免人工安排時的疏漏。<br><br>' +
+            '同工请自已把<b>“無法上崗”</b>的日期圈選出來，其他時間開放讓系統自動按照規則輪值，盡量避免人工安排時的疏漏。' +
 
             '請點擊 <a href="https://docs.google.com/spreadsheets/d/1UmGhZH8p5cqZSktto-i2qV5PuGH607UF8UTv_VGe9C8/edit#gid=1893596443">Blackout Dates 表格鏈接</a>（需要用您的svca email），在您名字對應的那一行勾選您<strong>無法上崗</strong>的日期。注意請不要在其他同工的行上勾選。<br><br>' +
 
-            '這是第一次開放排班，敬請大家在 11/23 周日之前完成，所有改進意見也非常歡迎填寫在 Improvement Ideas 表格上，我們盡力將這個系統不斷完善。<br><br>' +
+            '敬請大家在 2/8 周日之前完成以便负责同工有足够时间排下个季度的服事时间表。<br><br>' +
 
             '求主幫助我們一起提升服事的品質，做時間的好管家。<br><br>' +
 
@@ -119,11 +134,11 @@ function sendBlackoutNotificationEmails() {
 
             'Praise the Lord! When you receive this email, it means that we are serving together in nurturing the next generation for the Lord and are committed to the SVCA Children’s Sunday School ministry.<br><br>' +
 
-            'To make the overall scheduling process smoother, the Children’s Ministry plans to prepare the Sunday serving rotations quarterly in advance (Dec–Feb, Mar–May, Jun–Aug, Sep–Nov). Each area coordinator will then make adjustments according to actual needs. To support this process, we have created a Blackout Dates form. Please mark the dates when you <strong>cannot serve</strong>, and the system will automatically generate a rotation schedule based on the rules, minimizing the chance of human errors in manual scheduling.<br><br>' +
+            'Please mark the dates when you <strong>cannot serve</strong>, and the system will automatically generate a rotation schedule based on the rules, minimizing the chance of human errors in manual scheduling. ' +
 
             'Please click the <a href="https://docs.google.com/spreadsheets/d/1UmGhZH8p5cqZSktto-i2qV5PuGH607UF8UTv_VGe9C8/edit#gid=1893596443">Blackout Dates link</a> (you must log in with your SVCA email) and check the dates you <strong>cannot serve</strong> on the row corresponding to your name. Please be careful not to make changes on other co-workers’ rows.<br><br>' +
 
-            'This is the first time we are opening this scheduling process. We kindly ask everyone to complete it before November 23. We also warmly welcome any suggestions you may have—please write them in the Improvement Ideas sheet. We will do our best to continually improve this system.<br><br>' +
+            'We kindly ask everyone to complete it before Sunday Feb 8.<br><br>' +
 
             'May the Lord help us improve the quality of our service together and be good stewards of the time He gives us.<br><br>' +
 
