@@ -139,18 +139,27 @@ function getVolunteerEmailMap() {
     var rolesSheet = ss.getSheetByName("Roles");
     if (!rolesSheet) return {};
 
+    // Find the email column by header name "SVCA Email"
+    var headerRow = rolesSheet.getDataRange().getValues()[0];
+    var emailCol = -1;
+    for (var c = 0; c < headerRow.length; c++) {
+        if (String(headerRow[c]).trim() === 'SVCA Email') {
+            emailCol = c + 1;
+            break;
+        }
+    }
+
     var lastRow = rolesSheet.getLastRow();
-    var lastCol = rolesSheet.getLastColumn();
-    if (lastRow < 2 || lastCol < 2) return {};
+    if (lastRow < 2 || emailCol < 2) return {};
 
     // Grab all data including the last column (email)
-    var range = rolesSheet.getRange(2, 1, lastRow - 1, lastCol);
+    var range = rolesSheet.getRange(2, 1, lastRow - 1, emailCol);
     var data = range.getValues();
 
     var map = {};
     data.forEach(function (row) {
         var name = (row[0] || "").toString().trim();            // Column A
-        var email = (row[lastCol - 1] || "").toString().trim();  // Last column = email
+        var email = (row[emailCol - 1] || "").toString().trim();  
         if (name && email) {
             map[name] = email.toLowerCase();
         }
