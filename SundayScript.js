@@ -1,8 +1,8 @@
 /**
  * Automatically populates the Schedule sheet with service dates and volunteer assignments.
- * - Populates column A with all Sundays in the next quarter.
+ * - Preserves existing schedule data and appends new Sundays for the next quarter.
  * - Uses volunteer role information from the Roles sheet and blackout info to assign volunteers.
- * - Applies round-robin assignment for each role in a persistent fashion, ensuring that if a volunteer is skipped due to a blackout, the rotation continues from that point.
+ * - Applies round-robin assignment for each role, continuing from where the last quarter ended.
  * - Ensures no volunteer is assigned more than one role on the same day.
  * - Sets dropdowns in each position column based on qualified volunteers.
  * - Applies header background colors.
@@ -13,41 +13,17 @@ function autoPopulateSchedule() {
   var rolesSheet = ss.getSheetByName("Roles");
   var blackoutSheet = ss.getSheetByName("Blackout Dates");
   var dateFormat = "MM/dd/yyyy";
+  var tz = ss.getSpreadsheetTimeZone();
 
   // Get all Sundays for the next quarter.
   var sundays = getSundaysForNextQuarter();
-
-  // Thoroughly clear the Schedule sheet, including any old data validations
-  // that might be lingering in columns to the right of the active area.
-  var maxRows = scheduleSheet.getMaxRows();
-  var maxCols = scheduleSheet.getMaxColumns();
-  var fullRange = scheduleSheet.getRange(1, 1, maxRows, maxCols);
-
-  fullRange.clearContent();        // remove all values
-  fullRange.clearFormat();         // remove background colors, fonts, etc.
-  fullRange.clearDataValidations(); // remove ALL dropdowns / validation rules 
 
   // Get role headers from the Roles sheet.
   // Assumes: Col A = Name, Col B..(second last) = roles, LAST column = Email.
   var lastCol = rolesSheet.getLastColumn();
   var rolesHeader = rolesSheet.getRange(1, 2, 1, lastCol - 2).getValues()[0];
 
-  // Write header row in Schedule sheet: Column A: "Date", columns B onward: role names.
-  var scheduleHeader = ["Date"].concat(rolesHeader);
-  var headerRange = scheduleSheet.getRange(1, 1, 1, scheduleHeader.length);
-  headerRange.setValues([scheduleHeader]);
-  headerRange.setBackground("#CCCCCC");
-
-  // Write Sunday dates into column A (starting at row 2).
-  var dateValues = sundays.map(function (date) {
-    return [date];
-  });
-  scheduleSheet.getRange(2, 1, sundays.length, 1).setValues(dateValues);
-  scheduleSheet.getRange(2, 1, sundays.length, 1).setNumberFormat(dateFormat);
-  scheduleSheet.getRange(2, 1, sundays.length, 1).setBackground("#DDDDDD");
-
   // Build mapping of roles to qualified volunteers from the Roles sheet.
-  // Assumes data starts at row 2: column A is volunteer name; columns B onward are checkboxes.
   var rolesDataRange = rolesSheet.getRange(2, 1, rolesSheet.getLastRow() - 1, rolesSheet.getLastColumn());
   var rolesData = rolesDataRange.getValues();
   var roleVolunteers = {};
@@ -63,9 +39,54 @@ function autoPopulateSchedule() {
     });
   });
 
-  // NOTE: We no longer set one validation rule per column here.
-  // Instead, we will build per-cell dropdowns AFTER loading blackout data,
-  // so that each date’s dropdown excludes volunteers who are blacked out on that date.
+  // --- Determine where to start appending and read last Sunday assignments ---
+  var existingLastRow = scheduleSheet.getLastRow();
+  var startRowForNewData = 2; // Default: start at row 2 (after header)
+  var lastSundayAssignments = {}; // role -> volunteer name from last Sunday
+  var servedLastSunday = {}; // volunteers who served on last Sunday (for back-to-back check)
+
+  if (existingLastRow >= 2) {
+    // There's existing data - read the last row's assignments
+    var existingHeaders = scheduleSheet.getRange(1, 1, 1, scheduleSheet.getLastColumn()).getValues()[0];
+    var lastRowData = scheduleSheet.getRange(existingLastRow, 1, 1, scheduleSheet.getLastColumn()).getValues()[0];
+
+    // Build map of role -> last assigned volunteer
+    for (var c = 1; c < existingHeaders.length; c++) {
+      var roleName = existingHeaders[c];
+      var assignedVol = (lastRowData[c] || "").toString().trim();
+      if (roleName && assignedVol && assignedVol !== "NA") {
+        lastSundayAssignments[roleName] = assignedVol;
+        servedLastSunday[assignedVol] = true;
+      }
+    }
+
+    // New data starts after existing data
+    startRowForNewData = existingLastRow + 1;
+  } else {
+    // No existing data - write header row
+    var scheduleHeader = ["Date"].concat(rolesHeader);
+    var headerRange = scheduleSheet.getRange(1, 1, 1, scheduleHeader.length);
+    headerRange.setValues([scheduleHeader]);
+    headerRange.setBackground("#CCCCCC");
+  }
+
+  // Clear any old data/validation in the rows we're about to write
+  var maxCols = scheduleSheet.getMaxColumns();
+  if (maxCols < rolesHeader.length + 1) {
+    maxCols = rolesHeader.length + 1;
+  }
+  var newRowsRange = scheduleSheet.getRange(startRowForNewData, 1, sundays.length, maxCols);
+  newRowsRange.clearContent();
+  newRowsRange.clearFormat();
+  newRowsRange.clearDataValidations();
+
+  // Write Sunday dates into column A
+  var dateValues = sundays.map(function (date) {
+    return [date];
+  });
+  scheduleSheet.getRange(startRowForNewData, 1, sundays.length, 1).setValues(dateValues);
+  scheduleSheet.getRange(startRowForNewData, 1, sundays.length, 1).setNumberFormat(dateFormat);
+  scheduleSheet.getRange(startRowForNewData, 1, sundays.length, 1).setBackground("#DDDDDD");
 
   // Load blackout data.
   var blackoutData = blackoutSheet.getDataRange().getValues();
@@ -74,7 +95,7 @@ function autoPopulateSchedule() {
   for (var j = 1; j < blackoutHeader.length; j++) {
     var d = blackoutHeader[j];
     if (d instanceof Date) {
-      var formatted = Utilities.formatDate(d, ss.getSpreadsheetTimeZone(), dateFormat);
+      var formatted = Utilities.formatDate(d, tz, dateFormat);
       blackoutDateMap[formatted] = j;
     } else {
       blackoutDateMap[d] = j;
@@ -86,80 +107,107 @@ function autoPopulateSchedule() {
     volunteerRowMap[volName] = i;
   }
 
-  /**
-   * Set per-cell data validation on the Schedule sheet so that:
-   * - Each dropdown only shows volunteers who are eligible for that role
-   * - AND are NOT blacked-out on that specific Sunday.
-   */
-  sundays.forEach(function (dateObj, rIndex) {
-    var formattedDate = Utilities.formatDate(dateObj, ss.getSpreadsheetTimeZone(), dateFormat);
+  // Get the actual Schedule sheet headers to determine correct column positions
+  var scheduleHeaders = scheduleSheet.getRange(1, 1, 1, scheduleSheet.getLastColumn()).getValues()[0];
 
-    rolesHeader.forEach(function (role, cIndex) {
+  // Build a map from role name -> column index (1-indexed)
+  var roleToColumnIndex = {};
+  for (var h = 1; h < scheduleHeaders.length; h++) {
+    var headerRole = (scheduleHeaders[h] || "").toString().trim();
+    if (headerRole) {
+      roleToColumnIndex[headerRole] = h + 1; // +1 because columns are 1-indexed
+    }
+  }
+
+  // Set per-cell data validation for each new Sunday
+  sundays.forEach(function (dateObj, rIndex) {
+    var formattedDate = Utilities.formatDate(dateObj, tz, dateFormat);
+
+    // Iterate through roles from Roles sheet to get the correct volunteer list
+    rolesHeader.forEach(function (role) {
       var baseList = roleVolunteers[role] || [];
+
+      // Find the correct column for this role on the Schedule sheet
+      var colIndex = roleToColumnIndex[role];
+      if (!colIndex) {
+        // Role not found in Schedule headers - skip
+        return;
+      }
 
       // Filter out volunteers who have blackout === TRUE on this date.
       var filteredList = baseList.filter(function (volName) {
-        // If we have no blackout row or no column for this date, treat as available.
         if (!volunteerRowMap.hasOwnProperty(volName) || !blackoutDateMap.hasOwnProperty(formattedDate)) {
           return true;
         }
-
-        var rowIdx = volunteerRowMap[volName];      // index into blackoutData rows
-        var colIdx = blackoutDateMap[formattedDate]; // index into blackoutData columns
+        var rowIdx = volunteerRowMap[volName];
+        var colIdx = blackoutDateMap[formattedDate];
         var cellVal = blackoutData[rowIdx][colIdx];
-
-        // If the cell is TRUE, it means the volunteer is blacked out -> exclude.
         return cellVal !== true;
       });
 
-      var cell = scheduleSheet.getRange(rIndex + 2, cIndex + 2); // +2 because row 2/col 2 are first data cells
+      var cell = scheduleSheet.getRange(startRowForNewData + rIndex, colIndex);
 
-      if (filteredList.length > 0) {
-        var rule = SpreadsheetApp.newDataValidation()
-          .requireValueInList(filteredList, true)
-          .build();
-        cell.setDataValidation(rule);
-      } else {
-        // No available volunteers for this role on this date: clear validation.
-        cell.clearDataValidations();
+      // Always add "NA" as an option to the dropdown
+      var dropdownList = filteredList.slice(); // copy array
+      if (dropdownList.indexOf("NA") === -1) {
+        dropdownList.push("NA");
       }
+
+      var rule = SpreadsheetApp.newDataValidation()
+        .requireValueInList(dropdownList, true)
+        .build();
+      cell.setDataValidation(rule);
     });
   });
 
-  // Set up a persistent round-robin pointer for each role.
+  // --- Initialize round-robin pointers based on last Sunday assignments ---
   var lastAssignedIndex = {};
   rolesHeader.forEach(function (role) {
-    lastAssignedIndex[role] = -1;
+    var volunteers = roleVolunteers[role] || [];
+    var lastVolunteer = lastSundayAssignments[role];
+
+    if (lastVolunteer && volunteers.length > 0) {
+      // Find the index of the last assigned volunteer in the list
+      var idx = volunteers.indexOf(lastVolunteer);
+      if (idx !== -1) {
+        lastAssignedIndex[role] = idx; // Start from here, so next pick is idx+1
+      } else {
+        lastAssignedIndex[role] = -1; // Not found, start fresh
+      }
+    } else {
+      lastAssignedIndex[role] = -1; // No last assignment or no volunteers
+    }
   });
 
   var floatingRoles = getFloatingRoles();
-
-  // Map each volunteer to their spouse (if any), from Couples sheet.
   var couplesMap = getCouplesMap();
 
-  // Track who served on the previous Sunday (any role).
-  var servedLastSunday = {};
-
-  // For each Sunday (each row in Schedule starting at row 2) and each role,
-  // assign a volunteer using round-robin that respects:
-  //   - blackout dates
-  //   - one non-floating role per person per Sunday
-  //   - couples cannot serve on the same Sunday
-  //   - no one serves two consecutive Sundays
+  // For each Sunday and each role, assign using round-robin
   for (var r = 0; r < sundays.length; r++) {
     var currentSunday = sundays[r];
-    var currentSundayFormatted = Utilities.formatDate(currentSunday, ss.getSpreadsheetTimeZone(), dateFormat);
+    var currentSundayFormatted = Utilities.formatDate(currentSunday, tz, dateFormat);
 
-    // Track volunteers already assigned on THIS date (any role)
     var assignedForDate = [];
 
-    rolesHeader.forEach(function (role, i) {
+    rolesHeader.forEach(function (role) {
       var volunteers = roleVolunteers[role];
       var assigned = "";
       var isFloating = floatingRoles.indexOf(role) !== -1;
 
+      // Find the correct column for this role on the Schedule sheet
+      var colIndex = roleToColumnIndex[role];
+      if (!colIndex) {
+        // Role not found in Schedule headers - skip
+        return;
+      }
+
+      // For "Parent Helper" roles, always set to NA
+      if (role.indexOf("Parent Helper") !== -1) {
+        scheduleSheet.getRange(startRowForNewData + r, colIndex).setValue("NA");
+        return;
+      }
+
       if (volunteers.length > 0) {
-        // Start from the volunteer following the last assigned one for this role.
         var startIndex = (lastAssignedIndex[role] + 1) % volunteers.length;
         var candidate = null;
 
@@ -195,7 +243,7 @@ function autoPopulateSchedule() {
           // 5) If passes all checks, pick this volunteer.
           if (!isBlackout) {
             candidate = volName;
-            lastAssignedIndex[role] = index; // update the pointer for this role
+            lastAssignedIndex[role] = index;
             break;
           }
         }
@@ -203,21 +251,25 @@ function autoPopulateSchedule() {
         if (candidate) {
           assigned = candidate;
           assignedForDate.push(candidate);
+        } else {
+          assigned = "NA"; // No valid volunteer found
         }
+      } else {
+        assigned = "NA"; // No volunteers for this role
       }
 
-      // Write assignment (or blank if no valid candidate)
-      scheduleSheet.getRange(r + 2, i + 2).setValue(assigned);
+      // Write assignment
+      scheduleSheet.getRange(startRowForNewData + r, colIndex).setValue(assigned);
     });
 
-    // After finishing this Sunday, update servedLastSunday for the next iteration.
+    // Update servedLastSunday for next iteration
     servedLastSunday = {};
     assignedForDate.forEach(function (name) {
       servedLastSunday[name] = true;
     });
   }
 
-  SpreadsheetApp.getUi().alert("Schedule auto-populated successfully.");
+  SpreadsheetApp.getUi().alert("Schedule auto-populated successfully. Added " + sundays.length + " new Sundays starting at row " + startRowForNewData + ".");
 }
 
 /**
@@ -639,7 +691,7 @@ function highlightOnePerson() {
   dataRange.setBackgrounds(backgrounds);
   SpreadsheetApp.flush();
 
-  Utilities.sleep(5000);
+  Utilities.sleep(10000);
 
   // Restore original backgrounds
   cellsToHighlight.forEach(function (cell) {
