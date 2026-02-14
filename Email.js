@@ -46,7 +46,7 @@ function sendBlackoutNotificationEmails() {
             break;
         }
     }
-    if(emailCol == -1) {
+    if (emailCol == -1) {
         SpreadsheetApp.getUi().alert('Cannot find the SVCA Email column.');
         return;
     }
@@ -63,13 +63,13 @@ function sendBlackoutNotificationEmails() {
             if (r < 2) continue;
 
             var name = rolesSheet.getRange(r, 1).getDisplayValue().trim();        // Col A
-            var email = rolesSheet.getRange(r, emailCol).getDisplayValue().trim();  
+            var email = rolesSheet.getRange(r, emailCol).getDisplayValue().trim();
 
             if (!name || !email) {
-              logAction('Cannot find name or email on Roles sheet for row ' + r);
-              continue;
+                logAction('Cannot find name or email on Roles sheet for row ' + r);
+                continue;
             }
-            
+
 
             recipients.push({
                 name: name,
@@ -226,8 +226,8 @@ function sendUpcomingSundayAssignmentsEmail() {
         var roleName = header[c];
         var volName = row[c];
 
-        // Skip "Helper" roles - do not send notifications for these volunteers
-        if (roleName && String(roleName).indexOf('Helper') !== -1) {
+        // Skip "Parent Helper" roles - do not send notifications for these volunteers
+        if (roleName && String(roleName).indexOf('Parent Helper') !== -1) {
             continue;
         }
 
@@ -315,36 +315,92 @@ function sendUpcomingSundayAssignmentsEmail() {
             continue;
         }
         email = email.trim();
+        //email = "gang.li@svca.cc";
 
         var rolesList = assignmentsByPerson[person];
-        var subject = 'SVCA Children’s Ministry – This Sunday (' + dateStr + ')';
+        var subject = 'SVCA Children\'s Ministry – This Sunday (' + dateStr + ')';
+
+        // Build role assignments with confirm/decline links
+        var rolesText = [];
+        var rolesHtml = [];
+
+        for (var i = 0; i < rolesList.length; i++) {
+            var role = rolesList[i];
+
+            // Build confirm and decline URLs
+            var confirmUrl = WEB_APP_URL +
+                '?action=confirm' +
+                '&name=' + encodeURIComponent(person) +
+                '&role=' + encodeURIComponent(role) +
+                '&date=' + encodeURIComponent(Utilities.formatDate(upcomingDate, tz, 'MM/dd/yyyy'));
+
+            var declineUrl = WEB_APP_URL +
+                '?action=decline' +
+                '&name=' + encodeURIComponent(person) +
+                '&role=' + encodeURIComponent(role) +
+                '&date=' + encodeURIComponent(Utilities.formatDate(upcomingDate, tz, 'MM/dd/yyyy'));
+
+            // Plain text version
+            rolesText.push('• ' + role);
+            rolesText.push('  [Confirm - Yes I will be there on that day: ' + confirmUrl + ']');
+            rolesText.push('  [Decline - Sorry I won\'t be available on that day: ' + declineUrl + ']');
+
+            // HTML version with styled buttons on separate rows
+            rolesHtml.push(
+                '<div style="margin-bottom: 15px; padding: 10px; background-color: #f5f5f5; border-radius: 5px;">' +
+                '<strong style="font-size: 18px;">' + role + '</strong><br>' +
+                '<div style="margin-top: 8px;"><a href="' + confirmUrl + '" style="display: inline-block; padding: 8px 16px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 4px; font-size: 14px;">✓ Confirm</a> <span style="margin-left: 8px; color: #333;">Yes I will be there on that day</span></div>' +
+                '<div style="margin-top: 8px;"><a href="' + declineUrl + '" style="display: inline-block; padding: 8px 16px; background-color: #f44336; color: white; text-decoration: none; border-radius: 4px; font-size: 14px;">✗ Decline</a> <span style="margin-left: 8px; color: #333;">Sorry I won\'t be available on that day</span></div>' +
+                '</div>'
+            );
+        }
 
         var bodyLines = [];
-        bodyLines.push('Hi ' + person + ',');
+        bodyLines.push('Dear ' + person + ',');
         bodyLines.push('');
         bodyLines.push('Here are your assignments for this Sunday (' + dateStr + '):');
         bodyLines.push('');
-
-        for (var i = 0; i < rolesList.length; i++) {
-            bodyLines.push('• ' + rolesList[i]);
-        }
-
+        bodyLines.push(rolesText.join('\n'));
         bodyLines.push('');
-        bodyLines.push('If you cannot serve this Sunday for some reason, please inform Sister Selena by replying this email as soon as possible. You can also view the full schedule here:');
+
+        // Calculate the coming Wednesday
+        var comingWed = new Date();
+        var dayOfWeek = comingWed.getDay(); // 0=Sun .. 6=Sat
+        var daysUntilWed = (3 - dayOfWeek + 7) % 7;
+        if (daysUntilWed === 0) daysUntilWed = 7; // if today is Wed, use next Wed
+        comingWed.setDate(comingWed.getDate() + daysUntilWed);
+        var comingWedStr = Utilities.formatDate(comingWed, tz, 'EEE, MMM d');
+
+        bodyLines.push('Please respond as soon as possible by clicking the Confirm or Decline link for each assignment above, preferably by EOD ' + comingWedStr + '.');
+        bodyLines.push('');
+        bodyLines.push('You can also view the full schedule here:');
         bodyLines.push(sheetUrl);
         bodyLines.push('');
         bodyLines.push('Thank you for serving!');
         bodyLines.push('');
-        bodyLines.push('SVCA Children’s Ministry');
+        bodyLines.push('SVCA Children\'s Ministry');
 
         var body = bodyLines.join('\n');
+
+        // Build HTML body
+        var htmlBody =
+            '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">' +
+            '<p>Dear ' + person + ',</p>' +
+            '<p>Here are your assignments for this Sunday (' + dateStr + '):</p>' +
+            rolesHtml.join('') +
+            '<p style="margin-top: 20px;">Please respond as soon as possible by clicking the <strong>Confirm</strong> or <strong>Decline</strong> button for each assignment above, preferably by EOD ' + comingWedStr + '.</p>' +
+            '<p>You can also view the full schedule here: <a href="' + sheetUrl + '">Schedule</a></p>' +
+            '<p>Thank you for serving!</p>' +
+            '<p>SVCA Children\'s Ministry</p>' +
+            '</div>';
 
         //MailApp.sendEmail(email, subject, body);
         MailApp.sendEmail({
             to: email,
             replyTo: 'shuru.fang@svca.cc',
             subject: subject,
-            body: body
+            body: body,
+            htmlBody: htmlBody
         });
 
         logAction('Sent weekly notification to ' + person);
