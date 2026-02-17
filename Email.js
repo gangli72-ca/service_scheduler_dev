@@ -400,6 +400,7 @@ function sendUpcomingSundayAssignmentsEmail() {
             replyTo: 'shuru.fang@svca.cc',
             subject: subject,
             body: body,
+            name: "SVCA Children's Ministry",
             htmlBody: htmlBody
         });
 
