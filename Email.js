@@ -180,14 +180,14 @@ function sendUpcomingSundayAssignmentsEmail() {
     var rolesSheet = ss.getSheetByName('Roles');
 
     if (!scheduleSheet || !rolesSheet) {
-        SpreadsheetApp.getUi().alert('Missing "Schedule" or "Roles" sheet. Please check sheet names.');
+        alertOrLog_('Missing "Schedule" or "Roles" sheet. Please check sheet names.');
         return;
     }
 
     // Find the upcoming Sunday date from the Schedule.
     var upcomingDate = findUpcomingSundayDate_(scheduleSheet);
     if (!upcomingDate) {
-        SpreadsheetApp.getUi().alert('No upcoming Sunday found in the Schedule sheet.');
+        alertOrLog_('No upcoming Sunday found in the Schedule sheet.');
         return;
     }
 
@@ -213,7 +213,7 @@ function sendUpcomingSundayAssignmentsEmail() {
     }
 
     if (targetRowIndex === -1) {
-        SpreadsheetApp.getUi().alert('Upcoming Sunday date was found, but no matching row in Schedule.');
+        alertOrLog_('Upcoming Sunday date was found, but no matching row in Schedule.');
         return;
     }
 
@@ -240,7 +240,7 @@ function sendUpcomingSundayAssignmentsEmail() {
     }
 
     if (Object.keys(assignmentsByPerson).length === 0) {
-        SpreadsheetApp.getUi().alert('No assignments found for the upcoming Sunday.');
+        alertOrLog_('No assignments found for the upcoming Sunday.');
         return;
     }
 
@@ -408,5 +408,17 @@ function sendUpcomingSundayAssignmentsEmail() {
         sentCount++;
     }
 
-    SpreadsheetApp.getUi().alert('Sent ' + sentCount + ' emails for ' + dateStr + '.');
+    alertOrLog_('Sent ' + sentCount + ' emails for ' + dateStr + '.');
+}
+
+/**
+ * Shows a UI alert if running interactively, otherwise logs the message.
+ * Avoids errors when the script is triggered by a time-driven trigger.
+ */
+function alertOrLog_(msg) {
+    try {
+        SpreadsheetApp.getUi().alert(msg);
+    } catch (e) {
+        Logger.log(msg);
+    }
 }
