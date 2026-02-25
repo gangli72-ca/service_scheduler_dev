@@ -5,11 +5,25 @@
  *   - Execute as: Your account
  *   - Who has access: Anyone with the link
  * 
- * After deployment, update WEB_APP_URL with your actual deployment URL.
+ * WEB_APP_URL is stored in Script Properties (per-project) so the same code
+ * can be pushed to both dev and prod without modification.
+ * To set it: run setWebAppUrl() from the Apps Script editor, or manually set
+ * the "WEB_APP_URL" script property via Project Settings > Script Properties.
  */
 
-// IMPORTANT: Update this URL after deploying the web app
-var WEB_APP_URL = "https://script.google.com/a/macros/svca.cc/s/AKfycbxv2YnLAJcVOY1g5EB2LtAKHltvqeAc2JibniaqXpUs4MqZlG4MTw1AWs5qkM8je_y6/exec";
+/**
+ * Returns the WEB_APP_URL from Script Properties.
+ * Throws an error if not set, to catch misconfiguration early.
+ */
+function getWebAppUrl() {
+    var url = PropertiesService.getScriptProperties().getProperty("WEB_APP_URL");
+    if (!url) {
+        throw new Error("WEB_APP_URL is not set in Script Properties. " +
+            "Go to Project Settings > Script Properties and add it, " +
+            "or run setWebAppUrl() from the script editor.");
+    }
+    return url;
+}
 
 /**
  * Main entry point for the web app.
@@ -86,7 +100,7 @@ function handleConfirm(name, role, date) {
     }
 
     // Set background to light green
-    cell.setBackground("#90EE90"); // Light green
+    cell.setBackground(CONFIRM_COLOR);
 
     logAction(name + " confirmed assignment for **" + role + "** on " + date);
 

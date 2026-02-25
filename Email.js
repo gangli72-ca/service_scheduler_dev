@@ -321,6 +321,7 @@ function sendUpcomingSundayAssignmentsEmail() {
         var subject = 'SVCA Children\'s Ministry – This Sunday (' + dateStr + ')';
 
         // Build role assignments with confirm/decline links
+        var webAppUrl = getWebAppUrl();
         var rolesText = [];
         var rolesHtml = [];
 
@@ -328,13 +329,13 @@ function sendUpcomingSundayAssignmentsEmail() {
             var role = rolesList[i];
 
             // Build confirm and decline URLs
-            var confirmUrl = WEB_APP_URL +
+            var confirmUrl = webAppUrl +
                 '?action=confirm' +
                 '&name=' + encodeURIComponent(person) +
                 '&role=' + encodeURIComponent(role) +
                 '&date=' + encodeURIComponent(Utilities.formatDate(upcomingDate, tz, 'MM/dd/yyyy'));
 
-            var declineUrl = WEB_APP_URL +
+            var declineUrl = webAppUrl +
                 '?action=decline' +
                 '&name=' + encodeURIComponent(person) +
                 '&role=' + encodeURIComponent(role) +

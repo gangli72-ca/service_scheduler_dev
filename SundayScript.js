@@ -308,6 +308,22 @@ function handleScheduleEdit(e) {
   // If there is no change, exit.
   if (oldValue === newValue) return;
 
+  // If the edited row's date is the upcoming Sunday, highlight the cell light green
+  // (same as the "confirmed" color from the web app).
+  try {
+    var upcomingDate = findUpcomingSundayDate_(sheet);
+    if (upcomingDate) {
+      var rowDate = new Date(dateCell.getTime());
+      rowDate.setHours(0, 0, 0, 0);
+      upcomingDate.setHours(0, 0, 0, 0);
+      if (rowDate.getTime() === upcomingDate.getTime() && newValue && newValue !== "NA") {
+        e.range.setBackground(CONFIRM_COLOR);
+      }
+    }
+  } catch (highlightErr) {
+    Logger.log("Error in upcoming Sunday highlight: " + highlightErr.message);
+  }
+
   // Build the log message.
   var description = "**" + role + "** is changed from (" + oldValue + ") to (" + newValue + ") for " + formattedDate;
 

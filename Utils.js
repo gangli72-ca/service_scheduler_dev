@@ -1,3 +1,6 @@
+// Shared highlight color for confirmed/acknowledged assignments (light green)
+var CONFIRM_COLOR = "#90EE90";
+
 /**
  * Calculates the date range for the next quarter based on a configurable start month.
  *
@@ -159,7 +162,7 @@ function getVolunteerEmailMap() {
     var map = {};
     data.forEach(function (row) {
         var name = (row[0] || "").toString().trim();            // Column A
-        var email = (row[emailCol - 1] || "").toString().trim();  
+        var email = (row[emailCol - 1] || "").toString().trim();
         if (name && email) {
             map[name] = email.toLowerCase();
         }
