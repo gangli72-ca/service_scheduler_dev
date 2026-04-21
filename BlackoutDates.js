@@ -55,6 +55,9 @@ function refreshBlackoutDates() {
     var rule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
     dataRange.setDataValidation(rule);
 
+    // Mark EM blackout dates.
+    markEMBlackoutDates();
+
     SpreadsheetApp.getUi().alert("Blackout Dates sheet refreshed successfully.");
 }
 

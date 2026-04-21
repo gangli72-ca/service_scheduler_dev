@@ -392,7 +392,7 @@ function copyScheduleToHistory() {
  *  1) Same person assigned more than once on the same Sunday (same row, different roles)
  *     -> Light red (#FFCCCC)
  *
- *  2) Same person assigned on two consecutive Sundays (adjacent rows, any roles)
+ *  2) Same person serving 3 consecutive Sundays
  *     -> Light yellow (#FFF2CC)
  *
  *  3) Husband and wife serving on the same Sunday (from Couples sheet)
@@ -400,7 +400,7 @@ function copyScheduleToHistory() {
  *
  * Colors are layered with simple priority:
  *   - Same-day duplicate (red) is applied first
- *   - Consecutive-week conflict (yellow) can override red
+ *   - 3-consecutive-week conflict (yellow) can override red
  *   - Couple conflict (blue) can override both (highest priority)
  */
 function highlightConflicts() {
@@ -418,21 +418,21 @@ function highlightConflicts() {
   var range = sheet.getRange(2, 2, numRows, numCols);
   var values = range.getValues();
 
-  // Clear previous backgrounds
-  range.setBackground(null);
+  // Save existing backgrounds so we can restore them after highlighting
+  var savedBackgrounds = range.getBackgrounds();
 
-  // Conflict flags: same-day duplicates, consecutive weeks, couples same day
+  // Conflict flags: same-day duplicates, 3-consecutive-weeks, couples same day
   var sameDayDup = [];
-  var consecWeekDup = [];
+  var threeConsec = [];
   var coupleConflict = [];
 
   for (var r = 0; r < numRows; r++) {
     sameDayDup[r] = [];
-    consecWeekDup[r] = [];
+    threeConsec[r] = [];
     coupleConflict[r] = [];
     for (var c = 0; c < numCols; c++) {
       sameDayDup[r][c] = false;
-      consecWeekDup[r][c] = false;
+      threeConsec[r][c] = false;
       coupleConflict[r][c] = false;
     }
   }
@@ -456,42 +456,32 @@ function highlightConflicts() {
     }
   }
 
-  // --- 2) Duplicates on two consecutive Sundays (adjacent rows) ---
-  // For each pair of consecutive rows r and r+1, if a name appears in both,
-  // mark all occurrences of that name in both rows.
-  for (var r = 0; r < numRows - 1; r++) {
-    var rowNow = values[r];
-    var rowNext = values[r + 1];
+  // --- 2) Same person serving 3 consecutive Sundays ---
+  // For each triplet of consecutive rows r, r+1, r+2, if a name appears in all three,
+  // mark all occurrences of that name in all three rows.
+  for (var r = 0; r < numRows - 2; r++) {
+    // Collect names in each of the 3 rows
+    var namesRow0 = {};
+    var namesRow1 = {};
+    var namesRow2 = {};
 
-    var namesNow = {};
-    var namesNext = {};
-
-    // Collect names in current row
     for (var c = 0; c < numCols; c++) {
-      var name = rowNow[c];
-      if (name && name !== "NA") namesNow[name] = true;
+      var n = values[r][c];
+      if (n && n !== "NA") namesRow0[n] = true;
+      n = values[r + 1][c];
+      if (n && n !== "NA") namesRow1[n] = true;
+      n = values[r + 2][c];
+      if (n && n !== "NA") namesRow2[n] = true;
     }
 
-    // Collect names in next row
-    for (var c = 0; c < numCols; c++) {
-      var name = rowNext[c];
-      if (name && name !== "NA") namesNext[name] = true;
-    }
-
-    // Intersection: names serving on consecutive Sundays
-    for (var name in namesNow) {
-      if (namesNext[name]) {
-        // Mark all occurrences in row r
+    // Find names present in all three rows
+    for (var name in namesRow0) {
+      if (namesRow1[name] && namesRow2[name]) {
+        // Mark all occurrences in rows r, r+1, r+2
         for (var c = 0; c < numCols; c++) {
-          if (values[r][c] === name) {
-            consecWeekDup[r][c] = true;
-          }
-        }
-        // Mark all occurrences in row r+1
-        for (var c = 0; c < numCols; c++) {
-          if (values[r + 1][c] === name) {
-            consecWeekDup[r + 1][c] = true;
-          }
+          if (values[r][c] === name) threeConsec[r][c] = true;
+          if (values[r + 1][c] === name) threeConsec[r + 1][c] = true;
+          if (values[r + 2][c] === name) threeConsec[r + 2][c] = true;
         }
       }
     }
@@ -526,34 +516,59 @@ function highlightConflicts() {
   }
 
   // --- Apply background colors based on conflicts ---
-  // We'll build a 2D array of colors to set in one go.
+  // Start from the saved backgrounds and overlay conflict colors.
   var colors = [];
   for (var r = 0; r < numRows; r++) {
     colors[r] = [];
     for (var c = 0; c < numCols; c++) {
-      var color = null;
+      // Keep the existing background by default
+      colors[r][c] = savedBackgrounds[r][c];
 
       if (sameDayDup[r][c]) {
-        color = "#FFCCCC"; // light red: same-day multiple roles
+        colors[r][c] = "#FFCCCC"; // light red: same-day multiple roles
       }
-      if (consecWeekDup[r][c]) {
-        color = "#FFF2CC"; // light yellow: consecutive Sundays
+      if (threeConsec[r][c]) {
+        colors[r][c] = "#FFF2CC"; // light yellow: 3 consecutive Sundays
       }
       if (coupleConflict[r][c]) {
-        color = "#CCE5FF"; // light blue: couple serving same day (highest priority)
+        colors[r][c] = "#CCE5FF"; // light blue: couple serving same day (highest priority)
       }
-
-      colors[r][c] = color;
     }
   }
 
   range.setBackgrounds(colors);
+
+  // --- Add legend on rows 35, 36, 37 (columns A & B) ---
+  var legendRows = [35, 36, 37];
+  var legendColors = ["#FFCCCC", "#FFF2CC", "#CCE5FF"];
+  var legendLabels = [
+    "Same person in multiple roles on the same Sunday",
+    "Same person serving 3 consecutive Sundays",
+    "Husband and wife serving on the same Sunday"
+  ];
+
+  // Save original values and backgrounds for legend cells
+  var legendRange = sheet.getRange(legendRows[0], 1, legendRows.length, 2);
+  var savedLegendValues = legendRange.getValues();
+  var savedLegendBgs = legendRange.getBackgrounds();
+
+  // Write legend
+  for (var i = 0; i < legendRows.length; i++) {
+    sheet.getRange(legendRows[i], 1).setValue("").setBackground(legendColors[i]);
+    sheet.getRange(legendRows[i], 2).setValue(legendLabels[i]).setBackground(null);
+  }
+
   SpreadsheetApp.flush();
 
-  Utilities.sleep(10000);
+  Utilities.sleep(15000);
 
-  // Restore to no background
-  range.setBackground(null);
+  // Restore original backgrounds (preserves confirm/decline colors)
+  range.setBackgrounds(savedBackgrounds);
+
+  // Restore legend cells
+  legendRange.setValues(savedLegendValues);
+  legendRange.setBackgrounds(savedLegendBgs);
+
   SpreadsheetApp.flush();
 }
 

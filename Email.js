@@ -105,7 +105,7 @@ function sendBlackoutNotificationEmails() {
 
             'Please mark the dates when you cannot serve, and the system will automatically generate a rotation schedule based on the rules, minimizing the chance of human errors in manual scheduling. Just go to https://docs.google.com/spreadsheets/d/1UmGhZH8p5cqZSktto-i2qV5PuGH607UF8UTv_VGe9C8/edit#gid=1893596443 (you must log in with your SVCA email) and check the dates you **cannot serve** on the row corresponding to your name. Please be careful not to make changes on other co-workers’ rows.\n\n' +
 
-            'We kindly ask everyone to complete it before Feb 8 so that we will have enough time to arrange the service schedule of next quarter.\n\n' +
+            'We kindly ask everyone to complete it as soon as possible so that we will have enough time to arrange the service schedule of next quarter.\n\n' +
 
             'May the Lord help us improve the quality of our service together and be good stewards of the time He gives us.\n\n' +
 
@@ -122,7 +122,7 @@ function sendBlackoutNotificationEmails() {
 
             '請點擊 <a href="https://docs.google.com/spreadsheets/d/1UmGhZH8p5cqZSktto-i2qV5PuGH607UF8UTv_VGe9C8/edit#gid=1893596443">Blackout Dates 表格鏈接</a>（需要用您的svca email），在您名字對應的那一行勾選您<strong>無法上崗</strong>的日期。注意請不要在其他同工的行上勾選。<br><br>' +
 
-            '敬請大家在 2/8 周日之前完成以便负责同工有足够时间排下个季度的服事时间表。<br><br>' +
+            '敬請大家盡快完成以便负责同工有足够时间排下个季度的服事时间表。<br><br>' +
 
             '求主幫助我們一起提升服事的品質，做時間的好管家。<br><br>' +
 
