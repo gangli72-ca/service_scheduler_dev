@@ -130,6 +130,30 @@ function getFloatingRoles() {
 }
 
 /**
+ * Reads "double week roles" from Config column H (one role per cell, H2, H3, H4, …).
+ * Stops at the first empty cell. These roles assign the same volunteer for
+ * 2 consecutive Sundays before rotating to the next volunteer.
+ *
+ * @return {string[]} Array of double-week role names.
+ */
+function getDoubleWeekRoles() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var config = ss.getSheetByName('Config');
+    if (!config) return [];
+    var lastRow = config.getLastRow();
+    if (lastRow < 2) return [];
+
+    var values = config.getRange(2, 8, lastRow - 1, 1).getValues(); // column H
+    var roles = [];
+    for (var i = 0; i < values.length; i++) {
+        var val = (values[i][0] || '').toString().trim();
+        if (!val) break;
+        roles.push(val);
+    }
+    return roles;
+}
+
+/**
  * Builds a map from volunteer name -> email using the "Roles" sheet.
  * Assumes:
  *   - Column A: Name
